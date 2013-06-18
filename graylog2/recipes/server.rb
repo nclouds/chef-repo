@@ -34,7 +34,7 @@ end
 
 remote_file "elasticsearch_dpkg" do
     path "#{node.graylog2.basedir}/rel/elasticsearch-#{node.graylog2.elasticsearch.version}.deb"
-    source "https://github.com/downloads/elasticsearch/elasticsearch/elasticsearch-#{node.graylog2.elasticsearch.version}.deb"
+    source "https://download.elasticsearch.org/elasticsearch/elasticsearch/elasticsearch-#{node.graylog2.elasticsearch.version}.deb"
     action :create_if_missing
 end
 
