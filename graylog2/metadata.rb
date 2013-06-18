@@ -1,4 +1,5 @@
 maintainer        "Medidata Solutions Inc."
+name              "graylog2"
 maintainer_email  "cloudteam@mdsol.com"
 license           "Apache 2.0"
 description       "Installs and configures Graylog2"
