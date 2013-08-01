@@ -18,86 +18,95 @@
 #
 
 # Install required APT packages
-package "build-essential"
-if node.graylog2.email_package
-    package node.graylog2.email_package
+ [ "build-essential",
+   "ruby1.9.1",
+   "ruby1.9.1-dev",
+   "build-essential", 
+   "libcurl4-openssl-dev", 
+   "libssl-dev", 
+   "zlib1g-dev",
+   "libpcre3-dev",
+   "apache2-mpm-prefork", 
+   "apache2-prefork-dev", 
+   "libapr1-dev",
+   "libaprutil1-dev",
+   "postfix"].each do |pkg|
+  package pkg do
+  action :install
+  end
+  end
+
+#Link required binaries
+execute "links" do
+command "cd /usr/bin;ln -sf ruby1.9.1 ruby;ln -sf gem1.9.1 gem;ln -sf erb1.9.1 erb;ln -sf irb1.9.1 irb;ln -sf rake1.9.1 rake;ln -sf rdoc1.9.1 rdoc;ln -sf testrb1.9.1 testrb"
 end
 
 # Install gem dependencies
-gem_package "bundler"
-gem_package "rake"
-
-# Create the release directory
-directory "#{node.graylog2.basedir}/rel" do
-  mode 0755
-  recursive true
+gem_package "bundler" do
+action :install
 end
 
-# Download the desired version of Graylog2 web interface from GitHub
-remote_file "download_web_interface" do
-  path "#{node.graylog2.basedir}/rel/graylog2-web-interface-#{node.graylog2.web_interface.version}.tar.gz"
-  source "https://github.com/downloads/Graylog2/graylog2-web-interface/graylog2-web-interface-#{node.graylog2.web_interface.version}.tar.gz"
-  action :create_if_missing
+gem_package "passenger" do
+action :install
+version "3.0.18"
+end
+
+#Linking required binaries
+execute "bundle-link" do
+command "ln -sf /var/lib/gems/1.9.1/bin/bundle /usr/bin/bundle"
+end
+
+# Create the release directory
+directory "#{node["graylog2"]["basedir"]}/rel" do
+mode 0755
+recursive true
+end
+
+remote_file "#{node["graylog2"]["basedir"]}/rel/graylog2-web-interface-#{node["graylog2"]["web_interface"]["version"]}.tar.gz" do
+source "https://github.com/Graylog2/graylog2-web-interface/releases/download/0.12.0/graylog2-web-interface-0.12.0.tar.gz"
+action :create_if_missing
 end
 
 # Unpack the desired version of Graylog2 web interface
-execute "tar zxf graylog2-web-interface-#{node.graylog2.web_interface.version}.tar.gz" do
-  cwd "#{node.graylog2.basedir}/rel"
-  creates "#{node.graylog2.basedir}/rel/graylog2-web-interface-#{node.graylog2.web_interface.version}/build_date"
-  action :nothing
-  subscribes :run, resources(:remote_file => "download_web_interface"), :immediately
+execute "extract" do
+command "cd #{node["graylog2"]["basedir"]};tar -xzf #{node["graylog2"]["basedir"]}/rel/graylog2-web-interface-#{node["graylog2"]["web_interface"]["version"]}.tar.gz;mv #{node["graylog2"]["basedir"]}/graylog2-web-interface-#{node["graylog2"]["web_interface"]["version"]} #{node["graylog2"]["basedir"]}/web"
 end
 
-# Link to the desired Graylog2 web interface version
-link "#{node.graylog2.basedir}/web" do
-  to "#{node.graylog2.basedir}/rel/graylog2-web-interface-#{node.graylog2.web_interface.version}"
+#Placing secret key file
+template "#{node["graylog2"]["basedir"]}/web/config/initializers/secret_token.rb" do
+source "secret_token.rb.erb"
+action :create
+end
+
+# Create mongoid.yml
+template "#{node["graylog2"]["basedir"]}/web/config/mongoid.yml" do
+source "mongoid.yml.erb"
+mode 0644
+  variables(
+          :mongodb_host => node["graylog2"]["mongodb"]["host"],
+          :mongodb_database => node["graylog2"]["mongodb"]["database"],
+          :mongodb_port => node["graylog2"]["mongodb"]["port"],
+          :mongodb_auth => node["graylog2"]["mongodb"]["auth"],
+          :mongodb_user => node["graylog2"]["mongodb"]["user"],
+          :mongodb_password => node["graylog2"]["mongodb"]["password"]
+          )
+end
+
+# Create general.yml
+template "#{node["graylog2"]["basedir"]}/web/config/general.yml" do
+source "general.yml.erb"
+owner "nobody"
+group "nogroup"
+mode 0644
+variables( :external_hostname => node["graylog2"]["external_hostname"] )
+end
+
+# Chown the Graylog2 directory to www-data/www-data to allow web servers to serve it
+execute "chperm" do
+command "sudo chown -R www-data:www-data #{node["graylog2"]["basedir"]}/web"
 end
 
 # Perform bundle install on the newly-installed Graylog2 web interface version
 execute "bundle install" do
-  cwd "#{node.graylog2.basedir}/web"
-  action :nothing
-  subscribes :run, resources(:link => "#{node.graylog2.basedir}/web"), :immediately
-end
-
-# Create mongoid.yml
-template "#{node.graylog2.basedir}/web/config/mongoid.yml" do
-  mode 0644
-end
-
-external_hostname = node.graylog2.external_hostname     ? node.graylog2.external_hostname :
-    (node.has_key?('ec2') and node.ec2.has_key?('public_hostname')) ? node.ec2.public_hostname :
-    (node.has_key?('ec2') and node.ec2.has_key?('public_ipv4'))     ? node.ec2.public_ipv4 :
-    node.has_key?('fqdn')                                           ? node.fqdn :
-    "localhost"
-
-# Create general.yml
-template "#{node.graylog2.basedir}/web/config/general.yml" do
-  owner "nobody"
-  group "nogroup"
-  mode 0644
-  variables( :external_hostname => external_hostname )
-end
-
-# Chown the Graylog2 directory to nobody/nogroup to allow web servers to serve it
-execute "sudo chown -R nobody:nogroup graylog2-web-interface-#{node.graylog2.web_interface.version}" do
-  cwd "#{node.graylog2.basedir}/rel"
-  not_if do
-    File.stat("#{node.graylog2.basedir}/rel/graylog2-web-interface-#{node.graylog2.web_interface.version}").uid == 65534
-  end
-  action :nothing
-  subscribes :run, resources(:execute => "bundle install"), :immediately
-end
-
-# Stream message rake tasks
-cron "Graylog2 send stream alarms" do
-  minute node.graylog2.stream_alarms_cron_minute
-  action node.graylog2.send_stream_alarms ? :create : :delete
-  command "cd #{node.graylog2.basedir}/web && RAILS_ENV=production bundle exec rake streamalarms:send"
-end
-
-cron "Graylog2 send stream subscriptions" do
-  minute node.graylog2.stream_subscriptions_cron_minute
-  action node.graylog2.send_stream_subscriptions ? :create : :delete
-  command "cd #{node.graylog2.basedir}/web && RAILS_ENV=production bundle exec rake subscriptions:send"
+command "cd #{node["graylog2"]["basedir"]}/web && bundle install --without=development"
 end

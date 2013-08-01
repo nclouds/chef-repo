@@ -3,9 +3,10 @@
 #
 
 <VirtualHost *:80>
-  ServerName <%= node.graylog2.server_name %>
-  DocumentRoot <%= node.graylog2.basedir %>/web/public
-  <Directory <%= node.graylog2.basedir %>/web/public>
+  ServerName <%= @server_name %>
+  DocumentRoot <%= @graylog2_basedir %>/web/public
+  RailsEnv 'production'
+  <Directory <%= @graylog2_basedir %>/web/public>
     Allow from all
     Options -MultiViews
   </Directory>
